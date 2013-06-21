@@ -298,7 +298,7 @@ int main(int argc, char *argv[]) {
     extern char *optarg;
     extern int optind, optopt;
 
-    while ((opt = getopt(argc, argv, "c:s:b:vm")) != -1) {
+    while ((opt = getopt(argc, argv, "c:s:b:dm")) != -1) {
         switch (opt) {
         case 's': 
             schema_arg = optarg;
