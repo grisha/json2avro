@@ -1,30 +1,39 @@
 
-WARNING: This is work in progress, YMMV. Some parts of the Avro spec
-are not yet implemented (enums, aliases).
+A utility for converting JSON files to Avro. It is written entirely in
+C and is quite fast. Supports Snappy, Deflate (zlib) and LZMA
+compression codecs, as well as custom Avro block size.
 
-This is a little utility to convert JSON files to Avro. It is written
-entirely in C and is quite fast. It supports Snappy, Deflate (gzip)
-and LZMA compression codecs.
+The purpose is to be useful in converting messy legacy JSON in which
+some elements might be missing or of wrong type, which is not
+currently possible with the standard avro-tools fromjson option.
 
-Unlike the avro-tools fromjson option, json2avro will use defaults
-that you can specify in your schema as well as resolve unions, which
-makes it very convenient for migrating legacy JSON.
+Since in a conversion from JSON *schema resolution* is technically not
+applicable (becasue JSON is not Avro), json2avro mimics schema
+resolution behavior by attemptin to use the defaults specified in the
+schema if the corresponding JSON element is missing as well as
+attempting to resolve unions by trying each type until one succeeds.
+
+It uses the Jansson JSON parser and Avro-C for Avro encoding. Both
+tools are written in C and are extremely fast.
+
+The Jansson parser is used with the JSON_DISABLE_EOF_CHECK, which
+means that the input does not have to be an object per-line, but is
+free-format. So long as the input represents a sequence of JSON
+objects (an object is enclosed in [] or {}), json2avro should be able
+to parse it. Note that null characters (\u0000) are not allowed as
+part of JSON strings, not even in embedded form.
+
+If json2avro encounters an error, it skips to the nearest end-of-line
+and starts parsing afresh. (This behavior can be turned off with the
+-x option).
+
+## Usage
 
 ```sh
 ./json2avro
 Usage: ./json2avro [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->
 If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.
 ```
-
-The JSON parser is Jansson with the JSON_DISABLE_EOF_CHECK enabled,
-which means that the input does not have to be an object per-line, but
-is rather free-format, so long as it represents a sequence of JSON
-objects (an object is enclosed in [] or {}), it should be able to
-parse. Note that null characters (\u0000) are not allowed as part of
-JSON.
-
-If json2avro encounters an error, it skips to the nearest end-of-line
-and starts parsing afresh.
 
 ## Example
 
