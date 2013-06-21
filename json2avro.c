@@ -292,9 +292,8 @@ int main(int argc, char *argv[]) {
     int opt, opterr = 0, verbose = 0, memstat = 0, errabort = 0;
     char *schema_arg = NULL;
     char *codec = NULL;
-    char *inpath = NULL;
-    char *outpath = NULL;
     char *endptr = NULL;
+    char *outpath = NULL;
     size_t block_sz = 0;
     extern char *optarg;
     extern int optind, optopt;
@@ -306,7 +305,6 @@ int main(int argc, char *argv[]) {
             break;
         case 'b':
             block_sz = strtol(optarg, &endptr, 0);
-            printf("block_sz: %d\n", block_sz);
             if (*endptr) {
                 fprintf(stderr, "ERROR: Invalid block size for -b: %s\n", optarg);
                 opterr++;
@@ -315,7 +313,7 @@ int main(int argc, char *argv[]) {
         case 'c': 
             codec = optarg;
             break;
-        case 'v':
+        case 'd':
             verbose = 1;
             break;
         case 'x':
@@ -334,13 +332,11 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if ((argc - optind) != 2 || opterr || !schema_arg) {
-        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-v] [-x (abort on error)] -s <schema> <infile.json> <outfile.avro>\n", argv[0]);
+    if ((argc - optind) < 1 || (argc - optind) > 2 || opterr || !schema_arg) {
+        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->\n", argv[0]);
+        fprintf(stderr, "If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.\n");
         exit(EXIT_FAILURE);
     }
-
-    inpath = argv[optind];
-    outpath = argv[optind+1];
 
     if (!codec) codec = "null";
     else if (strcmp(codec, "snappy") && strcmp(codec, "deflate") && strcmp(codec, "lzma") && strcmp(codec, "null")) {
@@ -348,25 +344,39 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (verbose)
-        fprintf(stderr, "Using codec: %s\n", codec);
+    if ((argc - optind) == 1) {
+        input = stdin;
+        outpath = argv[optind];
+    } else {
+        outpath = argv[optind+1];
+        input = fopen(argv[optind], "rb");
+        if ( errno != 0 ) {
+            perror("ERROR: Cannot open file");
+            exit(EXIT_FAILURE);
+        }
+    }
 
     if (avro_schema_from_json_length(schema_arg, strlen(schema_arg), &schema)) {
         fprintf(stderr, "ERROR: Unable to parse schema: '%s'\n", schema_arg);
         exit(EXIT_FAILURE);
     }
 
-    input = fopen(inpath, "rb");
-    if ( errno != 0 ) {
-        perror("ERROR: Cannot open file");
-        exit(EXIT_FAILURE);
+    if (!strcmp(outpath, "-")) {
+        if (avro_file_writer_create_with_codec_fp(stdout, outpath, 0, schema, &out, codec, block_sz)) {
+            fprintf(stderr, "ERROR: avro_file_writer_create_with_codec_fp FAILED: %s\n", avro_strerror());
+            exit(EXIT_FAILURE);
+        }
+
+    } else {
+        remove(outpath);
+        if (avro_file_writer_create_with_codec(outpath, schema, &out, codec, block_sz)) {
+            fprintf(stderr, "ERROR: avro_file_writer_create_with_codec FAILED: %s\n", avro_strerror());
+            exit(EXIT_FAILURE);
+        }
     }
-    
-    remove(outpath);
-    if (avro_file_writer_create_with_codec(outpath, schema, &out, codec, block_sz)) {
-        fprintf(stderr, "ERROR: avro_file_writer_create_with_codec FAILED: %s\n", avro_strerror());
-        exit(EXIT_FAILURE);
-    }
+
+    if (verbose)
+        fprintf(stderr, "Using codec: %s\n", codec);
 
     process_file(input, out, schema, verbose, memstat, errabort);
 

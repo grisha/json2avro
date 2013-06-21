@@ -11,8 +11,9 @@ that you can specify in your schema as well as resolve unions, which
 makes it very convenient for migrating legacy JSON.
 
 ```sh
-./json2avro 
-Usage: ./json2avro [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] -s <schema> <infile.json> <outfile.avro>
+./json2avro
+Usage: ./json2avro [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->
+If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.
 ```
 
 The JSON parser is Jansson with the JSON_DISABLE_EOF_CHECK enabled,
