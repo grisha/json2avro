@@ -18,7 +18,6 @@
 /*
  * TODO
  * Enums
- * Add ignore errors flag
  *
  */
 
@@ -38,7 +37,8 @@ void memory_status() {
     fclose(f);
 }
 
-int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_value_t *current_val, int quiet) {
+int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, 
+                    avro_value_t *current_val, int quiet, int strjson) {
 
     json = json ? json : dft;
     if (!json) {
@@ -67,7 +67,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_
             avro_value_t field;
             avro_value_get_by_index(current_val, i, &field, NULL);
             
-            if (schema_traverse(field_schema, json_val, dft, &field, quiet))
+            if (schema_traverse(field_schema, json_val, dft, &field, quiet, strjson))
                 return 1;
         }
     } break;
@@ -80,6 +80,13 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_
 
     case AVRO_STRING:
         if (!json_is_string(json)) {
+            if (json && strjson) {
+                /* -j specified, just dump the remaining json as string */
+                char * js = json_dumps(json, JSON_COMPACT|JSON_SORT_KEYS|JSON_ENCODE_ANY);
+                avro_value_set_string(current_val, js);
+                free(js);
+                break;
+            }
             if (!quiet)
                 fprintf(stderr, "ERROR: Expecting JSON string for Avro string, got something else\n");
             return 1;
@@ -168,7 +175,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_
             avro_value_t val;
             for (i=0; i<len; i++) {
                 avro_value_append(current_val, &val, NULL);
-                if (schema_traverse(items, json_array_get(json, i), NULL, &val, quiet))
+                if (schema_traverse(items, json_array_get(json, i), NULL, &val, quiet, strjson))
                     return 1;
             }
         }
@@ -185,7 +192,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_
             avro_value_t val;
             while (iter) {
                 avro_value_add(current_val, json_object_iter_key(iter), &val, 0, 0);
-                if (schema_traverse(values, json_object_iter_value(iter), NULL, &val, quiet))
+                if (schema_traverse(values, json_object_iter_value(iter), NULL, &val, quiet, strjson))
                     return 1;
                 iter = json_object_iter_next(json, iter);
             }
@@ -199,7 +206,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_
         for (i=0; i<avro_schema_union_size(schema); i++) {
             avro_value_set_branch(current_val, i, &branch);
             avro_schema_t type = avro_schema_union_branch(schema, i);
-            if (!schema_traverse(type, json, NULL, &branch, 1))
+            if (!schema_traverse(type, json, NULL, &branch, 1, strjson))
                 break;
         }
         if (i==avro_schema_union_size(schema)) {
@@ -231,7 +238,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, avro_
 }
 
 void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema, 
-                  int verbose, int memstat, int errabort) {
+                  int verbose, int memstat, int errabort, int strjson) {
 
     json_error_t err;
     json_t *json;
@@ -257,7 +264,7 @@ void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema,
         avro_value_iface_t *iface = avro_generic_class_from_schema(schema);
         avro_generic_value_new(iface, &record);
 
-        if (!schema_traverse(schema, json, NULL, &record, 0)) {
+        if (!schema_traverse(schema, json, NULL, &record, 0, strjson)) {
 
             if (avro_file_writer_append_value(out, &record)) {
                 fprintf(stderr, "avro_file_writer_append_value() failed\n");
@@ -289,7 +296,7 @@ int main(int argc, char *argv[]) {
     avro_file_writer_t out;
     const char *key;
 
-    int opt, opterr = 0, verbose = 0, memstat = 0, errabort = 0;
+    int opt, opterr = 0, verbose = 0, memstat = 0, errabort = 0, strjson = 0;
     char *schema_arg = NULL;
     char *codec = NULL;
     char *endptr = NULL;
@@ -298,7 +305,7 @@ int main(int argc, char *argv[]) {
     extern char *optarg;
     extern int optind, optopt;
 
-    while ((opt = getopt(argc, argv, "c:s:b:dm")) != -1) {
+    while ((opt = getopt(argc, argv, "c:s:b:dmxj")) != -1) {
         switch (opt) {
         case 's': 
             schema_arg = optarg;
@@ -319,6 +326,9 @@ int main(int argc, char *argv[]) {
         case 'x':
             errabort = 1;
             break;
+        case 'j':
+            strjson = 1;
+            break;
         case 'm':
             memstat = 1;
             break;
@@ -333,7 +343,7 @@ int main(int argc, char *argv[]) {
     }
 
     if ((argc - optind) < 1 || (argc - optind) > 2 || opterr || !schema_arg) {
-        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-j] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->\n", argv[0]);
         fprintf(stderr, "If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.\n");
         exit(EXIT_FAILURE);
     }
@@ -378,7 +388,7 @@ int main(int argc, char *argv[]) {
     if (verbose)
         fprintf(stderr, "Using codec: %s\n", codec);
 
-    process_file(input, out, schema, verbose, memstat, errabort);
+    process_file(input, out, schema, verbose, memstat, errabort, strjson);
 
     if (verbose)
         printf("Closing writer....\n");

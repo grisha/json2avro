@@ -31,7 +31,7 @@ and starts parsing afresh. (This behavior can be turned off with the
 
 ```sh
 ./json2avro
-Usage: ./json2avro [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->
+Usage: ./json2avro [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-j] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->
 If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.
 ```
 
@@ -81,4 +81,29 @@ java -jar ~/src/avro/java/avro-tools-1.7.4.jar tojson output.avro
 {"a_null":null,"a_bool":true,"an_int":12345,"a_long":9876543210,"a_float":1.234567,"a_double":1.23456781234567E7,"a_string":"foo bar","random_bytes":"\nV@H#3\u001Ad\u001A\u0006G\u0006K\u0007","a_fixed":"\u0000\u0000\u0000","an_int_array":[123,456,-32,0,12],"a_float_map":{"bar":-3.456,"foo":2.345},"null_default":{"string":"null"}}
 {"a_null":null,"a_bool":false,"an_int":54321,"a_long":9876543212,"a_float":7.654321,"a_double":8.76543217654321E7,"a_string":"foo bar","random_bytes":"\u0006K\u0007\nV@H#3\u001Ad\u001A\u0006","a_fixed":"\u0000\u0000\u0000","an_int_array":[321,654,-23,0,21],"a_float_map":{"bar":-6.543,"foo":5.324},"null_default":{"string":"blah"}}
 ```
- 
+
+The -j options tells json2avro to dump remaining JSON as a string
+where the Avro schema expects a string but JSON contains other
+types. This is useful when you have objects of arbitrary schema and
+you would like to store them as strings. For example, given the
+following JSON:
+
+```
+{"foo":"some value", "bar":{"some":["more", 3, {"complex":"json"}], "which":"we don't care to parse"}}
+```
+
+You can convert it to Avro as such:
+
+```sh
+./json2avro input2.json output2.avro -j -s \
+'{"type":"record", "name":"strjson", "fields":[
+ {"name":"foo", "type":"string"},
+ {"name":"bar", "type":"string"}]}'
+```
+
+This will save the value of "bar" as a JSON-encoded string:
+
+```
+java -jar ~/src/avro/java/avro-tools-1.7.4.jar tojson output2.avro
+{"foo":"some value","bar":"{\"some\":[\"more\",3,{\"complex\":\"json\"}],\"which\":\"we don't care to parse\"}"}
+```
