@@ -400,8 +400,9 @@ static void lex_scan_string(lex_t *lex, json_error_t *error)
                 }
                 else if(value == 0)
                 {
-                    error_set(error, lex, "\\u0000 is not allowed");
-                    goto out;
+                    value='0'; /* well, it's a workaround? */
+                    /* error_set(error, lex, "\\u0000 is not allowed"); */
+                    /* goto out; */
                 }
 
                 if(utf8_encode(value, buffer, &length))
