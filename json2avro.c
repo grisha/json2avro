@@ -38,7 +38,7 @@ void memory_status() {
 }
 
 int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, 
-                    avro_value_t *current_val, int quiet, int strjson) {
+                    avro_value_t *current_val, int quiet, int strjson, size_t max_str_sz) {
 
     json = json ? json : dft;
     if (!json) {
@@ -67,7 +67,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
             avro_value_t field;
             avro_value_get_by_index(current_val, i, &field, NULL);
             
-            if (schema_traverse(field_schema, json_val, dft, &field, quiet, strjson))
+            if (schema_traverse(field_schema, json_val, dft, &field, quiet, strjson, max_str_sz))
                 return 1;
         }
     } break;
@@ -83,6 +83,8 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
             if (json && strjson) {
                 /* -j specified, just dump the remaining json as string */
                 char * js = json_dumps(json, JSON_COMPACT|JSON_SORT_KEYS|JSON_ENCODE_ANY);
+                if (max_str_sz && (strlen(js) > max_str_sz))
+                    js[max_str_sz] = 0; /* truncate the string - this will result in invalid JSON! */
                 avro_value_set_string(current_val, js);
                 free(js);
                 break;
@@ -90,8 +92,18 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
             if (!quiet)
                 fprintf(stderr, "ERROR: Expecting JSON string for Avro string, got something else\n");
             return 1;
+        } else {
+            const char *js = json_string_value(json);
+            if (max_str_sz && (strlen(js) > max_str_sz)) {
+                /* truncate the string */
+                char *jst = malloc(strlen(js));
+                strcpy(jst, js);
+                jst[max_str_sz] = 0;
+                avro_value_set_string(current_val, jst);
+                free(jst);
+            } else
+                avro_value_set_string(current_val, js);
         }
-        avro_value_set_string(current_val, json_string_value(json));
         break;
 
     case AVRO_BYTES:
@@ -175,7 +187,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
             avro_value_t val;
             for (i=0; i<len; i++) {
                 avro_value_append(current_val, &val, NULL);
-                if (schema_traverse(items, json_array_get(json, i), NULL, &val, quiet, strjson))
+                if (schema_traverse(items, json_array_get(json, i), NULL, &val, quiet, strjson, max_str_sz))
                     return 1;
             }
         }
@@ -192,7 +204,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
             avro_value_t val;
             while (iter) {
                 avro_value_add(current_val, json_object_iter_key(iter), &val, 0, 0);
-                if (schema_traverse(values, json_object_iter_value(iter), NULL, &val, quiet, strjson))
+                if (schema_traverse(values, json_object_iter_value(iter), NULL, &val, quiet, strjson, max_str_sz))
                     return 1;
                 iter = json_object_iter_next(json, iter);
             }
@@ -206,7 +218,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
         for (i=0; i<avro_schema_union_size(schema); i++) {
             avro_value_set_branch(current_val, i, &branch);
             avro_schema_t type = avro_schema_union_branch(schema, i);
-            if (!schema_traverse(type, json, NULL, &branch, 1, strjson))
+            if (!schema_traverse(type, json, NULL, &branch, 1, strjson, max_str_sz))
                 break;
         }
         if (i==avro_schema_union_size(schema)) {
@@ -225,7 +237,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
            supported, not even escaped ones */
         const char *f = json_string_value(json);
         if (!avro_value_set_fixed(current_val, (void *)f, strlen(f))) {
-            fprintf(stderr, "ERROR: Setting Avro fixed value failed\n");
+            fprintf(stderr, "ERROR: Setting Avro fixed value FAILED\n");
             return 1;
         }
         break;
@@ -238,7 +250,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
 }
 
 void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema, 
-                  int verbose, int memstat, int errabort, int strjson) {
+                  int verbose, int memstat, int errabort, int strjson, size_t max_str_sz) {
 
     json_error_t err;
     json_t *json;
@@ -251,10 +263,10 @@ void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema,
             printf("Processing record %d\n", n);
         if (!json) {
             if (errabort) {
-                fprintf(stderr, "JSON error on line %d, column %d, pos %d: %s, aborting.\n", err.line, err.column, err.position, err.text);
+                fprintf(stderr, "JSON error on line %d, column %d, pos %d: %s, aborting.\n", n, err.column, err.position, err.text);
                 return;
             }
-            fprintf(stderr, "JSON error on line %d, column %d, pos %d: %s, skipping to EOL\n", err.line, err.column, err.position, err.text);
+            fprintf(stderr, "JSON error on line %d, column %d, pos %d: %s, skipping to EOL\n", n, err.column, err.position, err.text);
             while (getc(input) != '\n' && !feof(input)) {};
             json = json_loadf(input, JSON_DISABLE_EOF_CHECK, &err);
             continue;
@@ -264,10 +276,10 @@ void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema,
         avro_value_iface_t *iface = avro_generic_class_from_schema(schema);
         avro_generic_value_new(iface, &record);
 
-        if (!schema_traverse(schema, json, NULL, &record, 0, strjson)) {
+        if (!schema_traverse(schema, json, NULL, &record, 0, strjson, max_str_sz)) {
 
             if (avro_file_writer_append_value(out, &record)) {
-                fprintf(stderr, "avro_file_writer_append_value() failed\n");
+                fprintf(stderr, "ERROR: avro_file_writer_append_value() FAILED: %s\n", avro_strerror());
                 exit(EXIT_FAILURE);
             }
 
@@ -302,10 +314,11 @@ int main(int argc, char *argv[]) {
     char *endptr = NULL;
     char *outpath = NULL;
     size_t block_sz = 0;
+    size_t max_str_sz = 0;
     extern char *optarg;
     extern int optind, optopt;
 
-    while ((opt = getopt(argc, argv, "c:s:b:dmxj")) != -1) {
+    while ((opt = getopt(argc, argv, "c:s:b:z:dmxj")) != -1) {
         switch (opt) {
         case 's': 
             schema_arg = optarg;
@@ -314,6 +327,13 @@ int main(int argc, char *argv[]) {
             block_sz = strtol(optarg, &endptr, 0);
             if (*endptr) {
                 fprintf(stderr, "ERROR: Invalid block size for -b: %s\n", optarg);
+                opterr++;
+            }
+            break;
+        case 'z':
+            max_str_sz = strtol(optarg, &endptr, 0);
+            if (*endptr) {
+                fprintf(stderr, "ERROR: Invalid maximum string size for -z: %s\n", optarg);
                 opterr++;
             }
             break;
@@ -343,7 +363,7 @@ int main(int argc, char *argv[]) {
     }
 
     if ((argc - optind) < 1 || (argc - optind) > 2 || opterr || !schema_arg) {
-        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-j] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->\n", argv[0]);
+        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-j] [-x (abort on error)] [-z <max_str_sz>] -s <schema> [<infile.json>] <outfile.avro|->\n", argv[0]);
         fprintf(stderr, "If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.\n");
         exit(EXIT_FAILURE);
     }
@@ -388,7 +408,7 @@ int main(int argc, char *argv[]) {
     if (verbose)
         fprintf(stderr, "Using codec: %s\n", codec);
 
-    process_file(input, out, schema, verbose, memstat, errabort, strjson);
+    process_file(input, out, schema, verbose, memstat, errabort, strjson, max_str_sz);
 
     if (verbose)
         printf("Closing writer....\n");
