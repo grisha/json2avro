@@ -20,8 +20,10 @@ The Jansson parser is used with the JSON_DISABLE_EOF_CHECK, which
 means that the input does not have to be an object per-line, but is
 free-format. So long as the input represents a sequence of JSON
 objects (an object is enclosed in [] or {}), json2avro should be able
-to parse it. Note that null characters (\u0000) are not allowed as
-part of JSON strings, not even in embedded form.
+to parse it. Note that Jansson does not allow null characters (\u0000)
+as part of JSON strings, not even in embedded form. To work around
+this, json2avro will replace all nulls in strings (escaped or
+not) with a character '0'. (Yes, this is a total hack).
 
 If json2avro encounters an error, it skips to the nearest end-of-line
 and starts parsing afresh. (This behavior can be turned off with the
