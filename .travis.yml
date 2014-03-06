@@ -1,0 +1,12 @@
+language: c
+compiler: gcc
+
+# Install dependencies
+install: sudo apt-get install libsnappy-dev liblzma-dev asciidoc source-highlight
+
+# Custom build command
+script: make clean json2avro
+
+# Cache APT dependencies
+cache:
+  apt: true
