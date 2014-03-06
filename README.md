@@ -32,9 +32,23 @@ and starts parsing afresh. (This behavior can be turned off with the
 ## Usage
 
 ```sh
-./json2avro
-Usage: ./json2avro [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-j] [-x (abort on error)] -s <schema> [<infile.json>] <outfile.avro|->
-If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.
+$ ./json2avro -h
+Usage: ./json2avro [options] [input_file.json] <output_file.avro>
+
+Where options are:
+ -s schema (required) Avro schema to use for conversion.
+ -S file   (required) JSON file to read the avro schema from.
+ -c algo   (optional) Set output compression algorithm: null, snappy, deflate, lzma
+                      Default: no compression
+ -b bytes  (optional) Set output block size in bytes. Default: 16384
+ -d        (optional) Turn on debug mode.
+ -j        (optional) Dump unexpected JSON objects as strings.
+ -x        (optional) Abort on JSON parsing errors. Default: skip invalid json.
+ -z bytes  (optional) Maximum JSON string size. Default: no limit.
+ -m        (optional) Linux only, enable periodic memory stats information output.
+ -h                   Show this help and exit.
+
+If infile.json is not specified, STDIN is assumed. outfile.avro of '-' means STDOUT.
 ```
 
 ## Example
@@ -49,7 +63,7 @@ If we have the following JSON called `input.json`:
 "a_fixed":"abcd", "an_int_array":[123, 456, -32, 0, 12],
 "a_float_map":{"foo":2.345, "bar":-3.456}}    {"a_null":null,
 "a_bool":false, "an_int":54321, "a_long":9876543212,
-"a_float":7.654321, "a_double":8.76543217654321E7, 
+"a_float":7.654321, "a_double":8.76543217654321E7,
 "a_string":"foo bar",
 "random_bytes":"\u0006K\u0007\nV@H#3\u001ad\u001a\u0006",
 "a_fixed":"dcba", "an_int_array":[321, 654, -23, 0, 21],
