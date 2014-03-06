@@ -1,6 +1,6 @@
 /*
  * Copyright 2013 Gregory Trubetskoy
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you
  * may not use this file except in compliance with the License.  You
  * may obtain a copy of the License at
@@ -28,6 +28,38 @@
 #include <jansson.h>
 #include <avro.h>
 
+#define MAX_SCHEMA_LEN ((off_t) 1024*1024)
+
+char *read_schema_file(char *file_name) {
+    FILE *schema_file = fopen(file_name, "rt");
+    if (errno != 0) {
+        fprintf(stderr, "Could not find or access file: %s\n", file_name);
+        return 0;
+    }
+
+    // Get file size
+    fseek(schema_file, 0, SEEK_END);
+    off_t file_size = ftell(schema_file);
+    fseek(schema_file, 0, SEEK_SET);
+
+    if (file_size == 0) {
+        fprintf(stderr, "Empty schema file: %s\n", file_name);
+        return 0;
+    }
+
+    if (file_size > MAX_SCHEMA_LEN) {
+        fprintf(stderr, "Schema file size is too big: %lld bytes > %lld maximum supported length\n", file_size, MAX_SCHEMA_LEN);
+        return 0;
+    }
+
+    // Allocate buffer for the schema and read the data
+    char *buf = (char*) malloc(file_size);
+    fread(buf, 1, file_size, schema_file);
+    fclose(schema_file);
+
+    return buf;
+}
+
 void memory_status() {
     /* This is obviously Linux-only */
     const char* statm_path = "/proc/self/statm";
@@ -38,7 +70,7 @@ void memory_status() {
     fclose(f);
 }
 
-int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft, 
+int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
                     avro_value_t *current_val, int quiet, int strjson, size_t max_str_sz) {
 
     json = json ? json : dft;
@@ -67,7 +99,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
 
             avro_value_t field;
             avro_value_get_by_index(current_val, i, &field, NULL);
-            
+
             if (schema_traverse(field_schema, json_val, dft, &field, quiet, strjson, max_str_sz))
                 return 1;
         }
@@ -170,7 +202,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
                 fprintf(stderr, "ERROR: Expecting JSON null for Avro null, got something else\n");
             return 1;
         }
-        avro_value_set_null(current_val); 
+        avro_value_set_null(current_val);
         break;
 
     case AVRO_ENUM:
@@ -250,7 +282,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
     return 0;
 }
 
-void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema, 
+void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema,
                   int verbose, int memstat, int errabort, int strjson, size_t max_str_sz) {
 
     json_error_t err;
@@ -286,7 +318,7 @@ void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema,
 
         } else
             fprintf(stderr, "Error processing record %d, skipping...\n", n);
-        
+
         avro_value_iface_decref(iface);
         avro_value_decref(&record);
 
@@ -297,12 +329,38 @@ void process_file(FILE *input, avro_file_writer_t out, avro_schema_t schema,
         json = json_loadf(input, JSON_DISABLE_EOF_CHECK, &err);
     }
 
+    if (memstat) memory_status();
 
     avro_schema_decref(schema);
 }
 
-int main(int argc, char *argv[]) {
+void print_help(char *program_name) {
+    fprintf(stderr, "Usage: %s [options] [input_file.json] <output_file.avro>\n", program_name);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Where options are:\n");
+    fprintf(stderr, " -s schema (required) Avro schema to use for conversion.\n");
+    fprintf(stderr, " -S file   (required) JSON file to read the avro schema from.\n");
+    fprintf(stderr, " -c algo   (optional) Set output compression algorithm: null, snappy, deflate, lzma\n");
+    fprintf(stderr, "                      Default: no compression\n");
+    fprintf(stderr, " -b bytes  (optional) Set output block size in bytes. Default: 16384\n");
+    fprintf(stderr, " -d        (optional) Turn on debug mode.\n");
+    fprintf(stderr, " -j        (optional) Dump unexpected JSON objects as strings.\n");
+    fprintf(stderr, " -x        (optional) Abort on JSON parsing errors. Default: skip invalid json.\n");
+    fprintf(stderr, " -z bytes  (optional) Maximum JSON string size. Default: no limit.\n");
+    fprintf(stderr, " -m        (optional) Linux only, enable periodic memory stats information output.\n");
+    fprintf(stderr, " -h                   Show this help and exit.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "If infile.json is not specified, STDIN is assumed. outfile.avro of '-' means STDOUT.\n");
+    fprintf(stderr, "\n");
+}
 
+void usage_error(char *program_name, char *message) {
+    if (message) fprintf(stderr, "ERROR: %s\n\n", message);
+    print_help(program_name);
+    exit(EXIT_FAILURE);
+}
+
+int main(int argc, char *argv[]) {
     FILE *input;
 
     avro_schema_t schema;
@@ -319,10 +377,13 @@ int main(int argc, char *argv[]) {
     extern char *optarg;
     extern int optind, optopt;
 
-    while ((opt = getopt(argc, argv, "c:s:b:z:dmxj")) != -1) {
+    while ((opt = getopt(argc, argv, "c:s:S:b:z:dmxjh")) != -1) {
         switch (opt) {
-        case 's': 
+        case 's':
             schema_arg = optarg;
+            break;
+        case 'S':
+            schema_arg = read_schema_file(optarg);
             break;
         case 'b':
             block_sz = strtol(optarg, &endptr, 0);
@@ -338,7 +399,7 @@ int main(int argc, char *argv[]) {
                 opterr++;
             }
             break;
-        case 'c': 
+        case 'c':
             codec = optarg;
             break;
         case 'd':
@@ -351,8 +412,15 @@ int main(int argc, char *argv[]) {
             strjson = 1;
             break;
         case 'm':
-            memstat = 1;
+            #if defined(__linux__)
+              memstat = 1;
+            #else
+              usage_error(argv[0], "Memory stats is a Linux-only feature!");
+            #endif
             break;
+        case 'h':
+            print_help(argv[0]);
+            exit(0);
         case ':':
             fprintf(stderr, "ERROR: Option -%c requires an operand\n", optopt);
             opterr++;
@@ -363,11 +431,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if ((argc - optind) < 1 || (argc - optind) > 2 || opterr || !schema_arg) {
-        fprintf(stderr, "Usage: %s [-c null|snappy|deflate|lzma] [-b <block_size (dft: 16384)>] [-d] [-j] [-x (abort on error)] [-z <max_str_sz>] -s <schema> [<infile.json>] <outfile.avro|->\n", argv[0]);
-        fprintf(stderr, "If infile.json is not specified, stdin is assumed. outfile.avro of '-' is stdout.\n");
-        exit(EXIT_FAILURE);
+    int file_args_cnt = (argc - optind);
+    if (file_args_cnt == 0) {
+        usage_error(argv[0], "Please provide at least one file name argument");
     }
+    if (file_args_cnt > 2) {
+        fprintf(stderr, "Too many file name arguments: %d!\n", file_args_cnt);
+        usage_error(argv[0], 0);
+    }
+
+    if (opterr) usage_error(argv[0], 0);
+    if (!schema_arg) usage_error(argv[0], "Please provide correct schema!");
 
     if (!codec) codec = "null";
     else if (strcmp(codec, "snappy") && strcmp(codec, "deflate") && strcmp(codec, "lzma") && strcmp(codec, "null")) {
@@ -382,7 +456,8 @@ int main(int argc, char *argv[]) {
         outpath = argv[optind+1];
         input = fopen(argv[optind], "rb");
         if ( errno != 0 ) {
-            perror("ERROR: Cannot open file");
+            fprintf(stderr, "ERROR: Cannot open input file: %s: ", argv[optind]);
+            perror(0);
             exit(EXIT_FAILURE);
         }
     }
