@@ -294,13 +294,11 @@ void process_file(char *json_bucket, avro_file_writer_t out, avro_schema_t schem
     json_file = strtok(json_bucket, " ");
 
     while ((json_file != NULL)) {
-        if (strcmp(json_file, "-") == 0) {
+        if (strcmp(json_file, "-") == 0)
             input = stdin;
-            json = json_loadf(input, JSON_DISABLE_EOF_CHECK, &err);
-        } else {
+        else
             input = fopen(json_file, "r");
-            json = json_loadf(input, JSON_DISABLE_EOF_CHECK, &err);
-        }
+        json = json_loadf(input, JSON_DISABLE_EOF_CHECK, &err);
         while (!feof(input)) {
             n++;
             if (verbose && !(n % 1000))
