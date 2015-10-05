@@ -8,7 +8,7 @@ some elements might be missing or of wrong type, which is not
 currently possible with the standard avro-tools fromjson option.
 
 Since in a conversion from JSON *schema resolution* is technically not
-applicable (becasue JSON is not Avro), json2avro mimics schema
+applicable (because JSON is not Avro), json2avro mimics schema
 resolution behavior by attemptin to use the defaults specified in the
 schema if the corresponding JSON element is missing as well as
 attempting to resolve unions by trying each type until one succeeds.
