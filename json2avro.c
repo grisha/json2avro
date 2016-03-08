@@ -170,21 +170,21 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
         break;
 
     case AVRO_FLOAT:
-        if (!json_is_real(json)) {
+        if (!json_is_number(json)) {
             if (!quiet)
-                fprintf(stderr, "ERROR: Expecting JSON real for Avro float, got something else\n");
+                fprintf(stderr, "ERROR: Expecting JSON number for Avro float, got something else\n");
             return 1;
         }
-        avro_value_set_float(current_val, json_real_value(json));
+        avro_value_set_float(current_val, json_number_value(json));
         break;
 
     case AVRO_DOUBLE:
-        if (!json_is_real(json)) {
+        if (!json_is_number(json)) {
             if (!quiet)
-                fprintf(stderr, "ERROR: Expecting JSON real for Avro double, got something else\n");
+                fprintf(stderr, "ERROR: Expecting JSON number for Avro double, got something else\n");
             return 1;
         }
-        avro_value_set_double(current_val, json_real_value(json));
+        avro_value_set_double(current_val, json_number_value(json));
         break;
 
     case AVRO_BOOLEAN:
