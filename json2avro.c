@@ -269,7 +269,7 @@ int schema_traverse(const avro_schema_t schema, json_t *json, json_t *dft,
         /* NB: Jansson uses null-terminated strings, so embedded nulls are NOT
            supported, not even escaped ones */
         const char *f = json_string_value(json);
-        if (!avro_value_set_fixed(current_val, (void *)f, strlen(f))) {
+        if (avro_value_set_fixed(current_val, (void *)f, strlen(f))) {
             fprintf(stderr, "ERROR: Setting Avro fixed value FAILED\n");
             return 1;
         }
